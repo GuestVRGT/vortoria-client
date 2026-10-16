@@ -1,5 +1,5 @@
 (async()=>{
-const n=17;
+const n=21;
 const parts=[];
 for(let i=0;i<n;i++){
   const t=await fetch('./p'+i+'.txt').then(r=>{if(!r.ok)throw new Error('missing p'+i+'.txt ('+r.status+')');return r.text();});
