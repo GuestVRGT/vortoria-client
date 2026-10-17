@@ -51,7 +51,19 @@ a.web{color:#3dd6b0;font-size:.85rem}
   box-shadow:0 4px 18px rgba(59,109,240,.5);
   user-select:none;
 }
-#jumpBtn:active{transform:scale(0.92);background:linear-gradient(145deg,#4a7aee,#2f5cd0)}
+#jumpBtn:active{transform:scale(0.92)}
+#zoomControls{
+  position:absolute;right:20px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:10px;z-index:15;pointer-events:auto;
+}
+.zoomBtn{
+  width:48px;height:48px;border-radius:50%;
+  background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.3);
+  color:#fff;font-size:22px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;user-select:none;
+}
+.zoomBtn:active{background:rgba(80,120,255,.5)}
 </style>
 </head>
 <body>
@@ -75,7 +87,7 @@ a.web{color:#3dd6b0;font-size:.85rem}
   <section id="home">
     <div class="card">
       <h2>Client ready</h2>
-      <p style="color:#8b9bb8;margin:8px 0 12px">Drag to look · Left stick to move · JUMP button</p>
+      <p style="color:#8b9bb8;margin:8px 0 12px">Drag to look · Stick to move · JUMP · Zoom with + / -</p>
       <button class="btn" type="button" id="go">Play Playground</button>
     </div>
   </section>
@@ -96,6 +108,10 @@ a.web{color:#3dd6b0;font-size:.85rem}
   <canvas id="c"></canvas>
   <div id="hud">Joining…</div>
   <button class="btn sec" type="button" id="leave">Leave</button>
+  <div id="zoomControls">
+    <div class="zoomBtn" id="zoomIn">+</div>
+    <div class="zoomBtn" id="zoomOut">−</div>
+  </div>
   <div id="mobileControls">
     <div class="joy-zone" id="joyLeft"><div class="joy-base"><div class="joy-stick" id="stickL"></div></div></div>
     <div id="jumpBtn">JUMP</div>
@@ -137,17 +153,19 @@ const PLACES = {
 let running = 0, yaw = 0, pitch = 0.25, keys = {}, velY = 0, onG = 1, placeName = 'Playground';
 let moveX = 0, moveZ = 0;
 let walkCycle = 0;
+let camDist = 5.5;                 // zoom distance
+const CAM_DIST_MIN = 2.0;
+const CAM_DIST_MAX = 12.0;
 let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || ('ontouchstart' in window);
 
 let lookTouchId = null;
 let lastLookX = 0, lastLookY = 0;
 
-const GROUND_Y = 0;          // top of the ground plane
-const STAND_Y = 0;           // character feet at ground level
+const STAND_Y = 0;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87b8d8);
-scene.fog = new THREE.Fog(0x87b8d8, 40, 90);
+scene.fog = new THREE.Fog(0x87b8d8, 50, 100);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 200);
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -174,12 +192,11 @@ function buildMap(id) {
   placeName = info.name;
   scene.background = new THREE.Color(0x87b8d8);
 
-  // Ground: top surface at y = 0
   const ground = new THREE.Mesh(
     new THREE.BoxGeometry(60, 1, 60),
     new THREE.MeshStandardMaterial({ color: info.color })
   );
-  ground.position.y = -0.5; // so top is at y=0
+  ground.position.y = -0.5;
   scene.add(ground);
 
   const pads = id === 'obby'
@@ -191,7 +208,7 @@ function buildMap(id) {
       new THREE.BoxGeometry(id==='obby'?2.2:3, h, id==='obby'?2.2:3),
       new THREE.MeshStandardMaterial({ color: 0x6b7cff })
     );
-    m.position.set(x, h/2, z); // sit on ground
+    m.position.set(x, h/2, z);
     scene.add(m);
   });
 }
@@ -200,16 +217,12 @@ new GLTFLoader().load(
   'https://cdn.jsdelivr.net/gh/GuestVRGT/huh@main/male.glb',
   (g) => {
     g.scene.traverse(o => { if (o.isMesh) o.material = o.material.clone(); });
-    // center the model so feet are near y=0
     const box = new THREE.Box3().setFromObject(g.scene);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    g.scene.position.y = -box.min.y; // feet on ground
+    g.scene.position.y = -box.min.y;
     charRoot.add(g.scene);
   },
   undefined,
   () => {
-    // simple fallback body
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.3, 0.8, 4, 8),
       new THREE.MeshStandardMaterial({ color: 0x5b8cff })
@@ -219,14 +232,14 @@ new GLTFLoader().load(
   }
 );
 
-// ========== INPUT: KEYBOARD ==========
+// ========== KEYBOARD ==========
 window.addEventListener('keydown', e => {
   keys[e.code] = 1;
   if (e.code === 'Space') { e.preventDefault(); keys.jump = 1; }
 });
 window.addEventListener('keyup', e => { keys[e.code] = 0; });
 
-// ========== INPUT: MOUSE LOOK ==========
+// ========== MOUSE LOOK ==========
 $('#c').addEventListener('click', () => {
   if (!isMobile) $('#c').requestPointerLock?.();
 });
@@ -237,14 +250,32 @@ document.addEventListener('mousemove', e => {
   pitch = Math.max(-1.55, Math.min(1.55, pitch));
 });
 
-// ========== INPUT: TOUCH DRAG TO LOOK ==========
+// ========== MOUSE WHEEL ZOOM ==========
+window.addEventListener('wheel', e => {
+  if (!running) return;
+  e.preventDefault();
+  camDist += e.deltaY * 0.008;
+  camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDist));
+}, { passive: false });
+
+// Zoom buttons
+$('#zoomIn').addEventListener('click', () => {
+  camDist = Math.max(CAM_DIST_MIN, camDist - 0.8);
+});
+$('#zoomOut').addEventListener('click', () => {
+  camDist = Math.min(CAM_DIST_MAX, camDist + 0.8);
+});
+$('#zoomIn').addEventListener('touchstart', e => { e.preventDefault(); camDist = Math.max(CAM_DIST_MIN, camDist - 0.8); }, {passive:false});
+$('#zoomOut').addEventListener('touchstart', e => { e.preventDefault(); camDist = Math.min(CAM_DIST_MAX, camDist + 0.8); }, {passive:false});
+
+// ========== TOUCH DRAG LOOK ==========
 const canvas = $('#c');
 
 canvas.addEventListener('touchstart', e => {
   if (!running) return;
   for (const t of e.changedTouches) {
     const el = document.elementFromPoint(t.clientX, t.clientY);
-    if (el && (el.closest('#joyLeft') || el.closest('#jumpBtn') || el.closest('#leave'))) continue;
+    if (el && (el.closest('#joyLeft') || el.closest('#jumpBtn') || el.closest('#leave') || el.closest('#zoomControls'))) continue;
     if (lookTouchId === null) {
       lookTouchId = t.identifier;
       lastLookX = t.clientX;
@@ -280,59 +311,70 @@ canvas.addEventListener('touchcancel', e => {
   }
 });
 
-// ========== LEFT JOYSTICK (FIXED FORWARD) ==========
-function setupJoystick(zoneId, stickId, onMove) {
+// ========== JOYSTICK (stable) ==========
+function setupJoystick(zoneId, stickId) {
   const zone = $(zoneId), stick = $(stickId);
-  let active = false, ox = 0, oy = 0, id = null;
+  let active = false, id = null;
   const maxR = 50;
 
-  function pos(e, touch) {
+  function getLocal(e, touch) {
     const r = zone.getBoundingClientRect();
     const t = touch || e;
-    return { x: t.clientX - r.left - r.width/2, y: t.clientY - r.top - r.height/2 };
+    return {
+      x: t.clientX - r.left - r.width / 2,
+      y: t.clientY - r.top - r.height / 2
+    };
   }
+
   function start(e) {
     e.preventDefault();
+    e.stopPropagation();
     const t = e.changedTouches ? e.changedTouches[0] : e;
     id = t.identifier ?? 'mouse';
     active = true;
-    const p = pos(e, t);
-    ox = p.x; oy = p.y;
   }
+
   function move(e) {
     if (!active) return;
     e.preventDefault();
+    e.stopPropagation();
     let t = e;
     if (e.changedTouches) {
       t = [...e.changedTouches].find(x => x.identifier === id) || e.changedTouches[0];
     }
-    const p = pos(e, t);
-    let dx = p.x - ox, dy = p.y - oy;
+    const p = getLocal(e, t);
+    let dx = p.x, dy = p.y;
     const len = Math.hypot(dx, dy);
-    if (len > maxR) { dx = dx/len*maxR; dy = dy/len*maxR; }
+    if (len > maxR) {
+      dx = (dx / len) * maxR;
+      dy = (dy / len) * maxR;
+    }
     stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    // Stick up (negative screen Y) should be forward
-    onMove(dx / maxR, -dy / maxR);
+
+    // Stick up = negative dy → positive forward
+    moveX = dx / maxR;
+    moveZ = -dy / maxR;
   }
-  function end() {
+
+  function end(e) {
     if (!active) return;
-    active = false; id = null;
+    active = false;
+    id = null;
     stick.style.transform = 'translate(-50%,-50%)';
-    onMove(0, 0);
+    moveX = 0;
+    moveZ = 0;
   }
-  zone.addEventListener('touchstart', start, {passive:false});
-  zone.addEventListener('touchmove', move, {passive:false});
+
+  zone.addEventListener('touchstart', start, {passive: false});
+  zone.addEventListener('touchmove', move, {passive: false});
   zone.addEventListener('touchend', end);
   zone.addEventListener('touchcancel', end);
   zone.addEventListener('mousedown', start);
-  window.addEventListener('mousemove', e => { if (active && id==='mouse') move(e); });
+  window.addEventListener('mousemove', e => { if (active && id === 'mouse') move(e); });
   window.addEventListener('mouseup', end);
 }
 
-setupJoystick('#joyLeft', '#stickL', (x, y) => {
-  moveX = x;
-  moveZ = y; // y is already corrected (stick up = +y)
-});
+setupJoystick('#joyLeft', '#stickL');
 
 function doJump() { keys.jump = 1; }
 $('#jumpBtn').addEventListener('touchstart', e => { e.preventDefault(); doJump(); }, {passive:false});
@@ -344,10 +386,13 @@ function pollGamepad() {
   const gp = pads[0] || pads[1];
   if (!gp) return;
 
-  const lx = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
-  const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
-  moveX = lx;
-  moveZ = -ly; // stick up = forward
+  // only override move if stick is being used
+  const lx = gp.axes[0];
+  const ly = gp.axes[1];
+  if (Math.abs(lx) > 0.15 || Math.abs(ly) > 0.15) {
+    moveX = lx;
+    moveZ = -ly;
+  }
 
   const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
   const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
@@ -369,9 +414,10 @@ function start(id) {
   if (isMobile) $('#mobileControls').classList.add('on');
   player.position.set(0, STAND_Y, 0);
   velY = 0; yaw = 0; pitch = 0.25;
-  moveX = moveZ = 0;
+  moveX = 0; moveZ = 0;
+  camDist = 5.5;
   lookTouchId = null;
-  $('#hud').textContent = placeName + (isMobile ? ' · Drag to look · Stick + JUMP' : ' · WASD · Mouse · Gamepad');
+  $('#hud').textContent = placeName + (isMobile ? ' · Drag look · Stick · JUMP · +/- zoom' : ' · WASD · Mouse · Scroll zoom');
   onResize();
   last = performance.now();
   loop();
@@ -406,22 +452,25 @@ function loop() {
 
   pollGamepad();
 
-  // keyboard
-  let kx = (keys.KeyD||0) - (keys.KeyA||0);
-  let kz = (keys.KeyW||0) - (keys.KeyS||0);
+  // keyboard (only overrides when keys are held)
+  let kx = (keys.KeyD || 0) - (keys.KeyA || 0);
+  let kz = (keys.KeyW || 0) - (keys.KeyS || 0);
   if (Math.abs(kx) + Math.abs(kz) > 0) {
     moveX = kx;
     moveZ = kz;
   }
 
-  let mx = moveX, mz = moveZ;
-  const len = Math.hypot(mx, mz) || 1;
-  mx /= len; mz /= len;
+  let mx = moveX;
+  let mz = moveZ;
+  const len = Math.hypot(mx, mz);
+  if (len > 1) { mx /= len; mz /= len; }
 
-  // FIXED: forward is -Z in Three.js when yaw = 0
-  const sy = Math.sin(yaw), cy = Math.cos(yaw);
-  const worldX =  mx * cy + mz * sy;
-  const worldZ =  mx * sy - mz * cy;   // flipped so stick-up = forward
+  // Stable forward direction relative to camera yaw
+  // When yaw = 0, forward should be -Z
+  const sy = Math.sin(yaw);
+  const cy = Math.cos(yaw);
+  const worldX = mx * cy + mz * sy;
+  const worldZ = mx * sy - mz * cy;
 
   const speed = 6.5;
   player.position.x += worldX * speed * dt;
@@ -437,8 +486,8 @@ function loop() {
     onG = 1;
   }
 
-  // face movement direction + walk animation
-  const moving = Math.hypot(worldX, worldZ) > 0.08;
+  // face + walk anim
+  const moving = Math.hypot(worldX, worldZ) > 0.05;
   if (moving) {
     let face = Math.atan2(worldX, worldZ);
     let cur = player.rotation.y;
@@ -455,12 +504,10 @@ function loop() {
     charRoot.rotation.z += (0 - charRoot.rotation.z) * 8 * dt;
   }
 
-  // camera follow
-  const dist = 5.0;
-  const camHeight = 1.6;
-  const tx = player.position.x + Math.sin(yaw) * dist * Math.cos(pitch);
-  const ty = player.position.y + camHeight + Math.sin(pitch) * dist;
-  const tz = player.position.z + Math.cos(yaw) * dist * Math.cos(pitch);
+  // camera with zoom
+  const tx = player.position.x + Math.sin(yaw) * camDist * Math.cos(pitch);
+  const ty = player.position.y + 1.5 + Math.sin(pitch) * camDist;
+  const tz = player.position.z + Math.cos(yaw) * camDist * Math.cos(pitch);
 
   camera.position.lerp(new THREE.Vector3(tx, ty, tz), 1 - Math.pow(0.00002, dt));
   camera.lookAt(player.position.x, player.position.y + 1.1, player.position.z);
