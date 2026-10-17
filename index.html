@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#0a0e1a"/>
 <title>Vortoria Client</title>
 <style>
-*{box-sizing:border-box;margin:0}html,body{height:100%;font-family:system-ui,sans-serif;background:#0a0e1a;color:#e8eefc}
+*{box-sizing:border-box;margin:0}html,body{height:100%;font-family:system-ui,sans-serif;background:#0a0e1a;color:#e8eefc;overflow:hidden}
 #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#0a0e1a;z-index:20}
 #boot.hid{display:none}
 #boot h1{font-size:1.4rem;background:linear-gradient(135deg,#9ec1ff,#3dd6b0);-webkit-background-clip:text;background-clip:text;color:transparent}
 #boot p{color:#8b9bb8;font-size:.9rem}
-.spin{width:36px;height:36px;border:3px solid #2a3550;border-top-color:#5b8cff;border-radius:50%;animation:s 0.8s linear infinite}
+.spin{width:36px;height:36px;border:3px solid #2a3550;border-top-color:#5b8cff;border-radius:50%;animation:s .8s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}
 #hub{display:none;min-height:100%}
 #hub.on{display:block}
@@ -24,14 +24,26 @@ main{padding:16px;max-width:900px;margin:0 auto}
 .btn{background:linear-gradient(135deg,#4f7cff,#2ec9a0);border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;color:#061018}
 .btn.sec{background:rgba(255,255,255,.06);color:#e8eefc;border:1px solid #2a3550}
 #play{display:none;position:fixed;inset:0;background:#05080f;z-index:9}
-#play.on{display:block}#c{width:100%;height:100%;display:block;touch-action:none}
-#hud{position:absolute;left:10px;top:10px;background:#0008;padding:8px 10px;border-radius:8px;font-size:12px;pointer-events:none}
-#leave{position:absolute;right:10px;top:10px}
+#play.on{display:block}
+#c{width:100%;height:100%;display:block;touch-action:none}
+#hud{position:absolute;left:10px;top:10px;background:#0008;padding:8px 10px;border-radius:8px;font-size:12px;pointer-events:none;z-index:10}
+#leave{position:absolute;right:10px;top:10px;z-index:10}
 #err{display:none;margin:12px 0;padding:10px;background:#3a1520;border:1px solid #a44;border-radius:8px;color:#ffb0b8;font-size:13px}
 #err.on{display:block}
 input{background:#0a0e1a;border:1px solid #2a3550;color:#fff;padding:8px;border-radius:8px;width:100%;margin:4px 0}
 label{font-size:12px;color:#8b9bb8;display:block}
 a.web{color:#3dd6b0;font-size:.85rem}
+
+/* Mobile controls */
+#mobileControls{display:none;position:fixed;inset:0;pointer-events:none;z-index:15}
+#mobileControls.on{display:block}
+.joy-zone{position:absolute;bottom:30px;width:130px;height:130px;pointer-events:auto;touch-action:none}
+#joyLeft{left:25px}
+#joyRight{right:25px}
+.joy-base{width:100%;height:100%;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);position:relative}
+.joy-stick{width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.45);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;transition:background .1s}
+#jumpBtn{position:absolute;bottom:40px;right:170px;width:70px;height:70px;border-radius:50%;background:rgba(79,124,255,.55);border:2px solid rgba(255,255,255,.3);color:#fff;font-weight:700;font-size:14px;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center}
+@media(max-width:900px){#jumpBtn{right:160px}}
 </style>
 </head>
 <body>
@@ -48,14 +60,14 @@ a.web{color:#3dd6b0;font-size:.85rem}
     <button type="button" data-v="games">Experiences</button>
     <button type="button" data-v="servers">Servers</button>
   </nav>
-  <a class="web" href="https://guestvrgt.github.io/vortoria/">← Website</a>
+  <a class="web" href="https://guestvrgt.github.io/vortex-recreation-blueprint/">← Website</a>
 </header>
 <main>
   <div id="err"></div>
   <section id="home">
     <div class="card">
       <h2>Client ready</h2>
-      <p style="color:#8b9bb8;margin:8px 0 12px">Opened from the website when you click Play. Or start a place here.</p>
+      <p style="color:#8b9bb8;margin:8px 0 12px">Mobile, console & desktop supported. Full 360° camera.</p>
       <button class="btn" type="button" id="go">Play Playground</button>
     </div>
   </section>
@@ -71,11 +83,18 @@ a.web{color:#3dd6b0;font-size:.85rem}
   </section>
 </main>
 </div>
+
 <div id="play">
   <canvas id="c"></canvas>
   <div id="hud">Joining…</div>
-  <button class="btn sec" type="button" id="leave">Leave to client</button>
+  <button class="btn sec" type="button" id="leave">Leave</button>
+  <div id="mobileControls">
+    <div class="joy-zone" id="joyLeft"><div class="joy-base"><div class="joy-stick" id="stickL"></div></div></div>
+    <div class="joy-zone" id="joyRight"><div class="joy-base"><div class="joy-stick" id="stickR"></div></div></div>
+    <div id="jumpBtn">JUMP</div>
+  </div>
 </div>
+
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
@@ -107,24 +126,35 @@ const PLACES = {
   obby: { name: 'Obby Trial', color: 0x4a3d8f }
 };
 
-let running=0, yaw=0, pitch=0.35, keys={}, velY=0, onG=0, placeName='Playground';
+// ========== STATE ==========
+let running = 0, yaw = 0, pitch = 0.25, keys = {}, velY = 0, onG = 1, placeName = 'Playground';
+let moveX = 0, moveZ = 0;          // analog move
+let lookDX = 0, lookDY = 0;        // analog look
+let walkCycle = 0;                 // for simple animation
+let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87b8d8);
 scene.fog = new THREE.Fog(0x87b8d8, 40, 90);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 200);
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
 const player = new THREE.Group();
-player.position.set(0, 1, 0);
+player.position.set(0, 0.6, 0);
 scene.add(player);
+
+// Smaller character root
+const charRoot = new THREE.Group();
+charRoot.scale.set(0.55, 0.55, 0.55); // smaller!
+player.add(charRoot);
+
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(8, 20, 6);
 scene.add(sun);
 
 function buildMap(id) {
-  // clear old platforms except lights/player - simple rebuild
-  const keep = new Set([player]);
   scene.children.slice().forEach(c => {
     if (c === player || c.isLight) return;
     scene.remove(c);
@@ -151,32 +181,124 @@ function buildMap(id) {
   });
 }
 
+// Load smaller avatar
 new GLTFLoader().load(
   'https://cdn.jsdelivr.net/gh/GuestVRGT/huh@main/male.glb',
   (g) => {
-    g.scene.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); } });
-    player.add(g.scene);
+    g.scene.traverse(o => { if (o.isMesh) o.material = o.material.clone(); });
+    g.scene.scale.set(0.9, 0.9, 0.9);
+    charRoot.add(g.scene);
   },
   undefined,
   () => {
+    // fallback simple body (smaller)
     const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
+      new THREE.CapsuleGeometry(0.28, 0.7, 4, 8),
       new THREE.MeshStandardMaterial({ color: 0x5b8cff })
     );
-    body.position.y = 1;
-    player.add(body);
+    body.position.y = 0.85;
+    charRoot.add(body);
   }
 );
 
-$('#c').addEventListener('click', () => $('#c').requestPointerLock?.());
-document.addEventListener('mousemove', e => {
-  if (!running || document.pointerLockElement !== $('#c')) return;
-  yaw -= e.movementX * 0.0032;
-  pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * 0.0028));
+// ========== INPUT: KEYBOARD ==========
+window.addEventListener('keydown', e => {
+  keys[e.code] = 1;
+  if (e.code === 'Space') { e.preventDefault(); keys.jump = 1; }
 });
-window.addEventListener('keydown', e => { keys[e.code]=1; if(e.code==='Space'){e.preventDefault();keys.jump=1;} });
-window.addEventListener('keyup', e => { keys[e.code]=0; });
+window.addEventListener('keyup', e => { keys[e.code] = 0; });
 
+// ========== INPUT: MOUSE (full 360) ==========
+$('#c').addEventListener('click', () => {
+  if (!isMobile) $('#c').requestPointerLock?.();
+});
+document.addEventListener('mousemove', e => {
+  if (!running || document.pointerLockElement !== $('#c') || isMobile) return;
+  yaw -= e.movementX * 0.0028;
+  pitch -= e.movementY * 0.0025;
+  // full 360 – no hard clamp, just soft limit so you don’t go inverted forever
+  pitch = Math.max(-1.55, Math.min(1.55, pitch));
+});
+
+// ========== INPUT: TOUCH JOYSTICKS (mobile) ==========
+function setupJoystick(zoneId, stickId, onMove) {
+  const zone = $(zoneId), stick = $(stickId);
+  let active = false, ox = 0, oy = 0, id = null;
+  const maxR = 48;
+
+  function pos(e, touch) {
+    const r = zone.getBoundingClientRect();
+    const t = touch || e;
+    return { x: t.clientX - r.left - r.width/2, y: t.clientY - r.top - r.height/2 };
+  }
+  function start(e) {
+    e.preventDefault();
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    id = t.identifier ?? 'mouse';
+    active = true;
+    const p = pos(e, t);
+    ox = p.x; oy = p.y;
+  }
+  function move(e) {
+    if (!active) return;
+    e.preventDefault();
+    let t = e;
+    if (e.changedTouches) {
+      t = [...e.changedTouches].find(x => x.identifier === id) || e.changedTouches[0];
+    }
+    const p = pos(e, t);
+    let dx = p.x - ox, dy = p.y - oy;
+    const len = Math.hypot(dx, dy);
+    if (len > maxR) { dx = dx/len*maxR; dy = dy/len*maxR; }
+    stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    onMove(dx / maxR, dy / maxR);
+  }
+  function end(e) {
+    if (!active) return;
+    active = false; id = null;
+    stick.style.transform = 'translate(-50%,-50%)';
+    onMove(0, 0);
+  }
+  zone.addEventListener('touchstart', start, {passive:false});
+  zone.addEventListener('touchmove', move, {passive:false});
+  zone.addEventListener('touchend', end);
+  zone.addEventListener('touchcancel', end);
+  // also mouse for testing
+  zone.addEventListener('mousedown', start);
+  window.addEventListener('mousemove', e => { if (active && id==='mouse') move(e); });
+  window.addEventListener('mouseup', end);
+}
+
+setupJoystick('#joyLeft', '#stickL', (x, y) => { moveX = x; moveZ = -y; });
+setupJoystick('#joyRight', '#stickR', (x, y) => { lookDX = x; lookDY = y; });
+
+$('#jumpBtn').addEventListener('touchstart', e => { e.preventDefault(); keys.jump = 1; }, {passive:false});
+$('#jumpBtn').addEventListener('mousedown', () => keys.jump = 1);
+
+// ========== INPUT: GAMEPAD / CONSOLE ==========
+function pollGamepad() {
+  const pads = navigator.getGamepads?.() || [];
+  const gp = pads[0] || pads[1];
+  if (!gp) return;
+
+  // left stick → move
+  const lx = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
+  const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
+  moveX = lx;
+  moveZ = -ly;
+
+  // right stick → look (full 360)
+  const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
+  const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
+  yaw -= rx * 0.045;
+  pitch -= ry * 0.035;
+  pitch = Math.max(-1.55, Math.min(1.55, pitch));
+
+  // A / Cross → jump
+  if (gp.buttons[0]?.pressed) keys.jump = 1;
+}
+
+// ========== GAME LOOP ==========
 function start(id) {
   const gid = (id || 'playground').toLowerCase();
   buildMap(gid);
@@ -184,9 +306,11 @@ function start(id) {
   $('#play').classList.add('on');
   $('#hub').classList.remove('on');
   $('#boot').classList.add('hid');
-  player.position.set(0, 1, 0);
-  velY = 0; yaw = 0; pitch = 0.35;
-  $('#hud').textContent = placeName + ' · click for mouse · WASD · Space';
+  if (isMobile) $('#mobileControls').classList.add('on');
+  player.position.set(0, 0.6, 0);
+  velY = 0; yaw = 0; pitch = 0.25;
+  moveX = moveZ = lookDX = lookDY = 0;
+  $('#hud').textContent = placeName + (isMobile ? ' · Joysticks + Jump' : ' · WASD · Mouse · Gamepad');
   onResize();
   last = performance.now();
   loop();
@@ -195,8 +319,8 @@ function stop() {
   running = 0;
   $('#play').classList.remove('on');
   $('#hub').classList.add('on');
+  $('#mobileControls').classList.remove('on');
   document.exitPointerLock?.();
-  // clear game from URL without reload if we want hub
   if (location.search) history.replaceState({}, '', location.pathname);
 }
 $('#go').onclick = () => start('playground');
@@ -218,43 +342,97 @@ function loop() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  let x = (keys.KeyD||0)-(keys.KeyA||0), z = (keys.KeyW||0)-(keys.KeyS||0);
-  const len = Math.hypot(x,z)||1; x/=len; z/=len;
-  const sy=Math.sin(yaw), cy=Math.cos(yaw);
-  const mx=x*cy+z*sy, mz=-x*sy+z*cy;
-  player.position.x += mx*7.5*dt;
-  player.position.z += mz*7.5*dt;
-  if (keys.jump && onG) { velY=9; onG=0; keys.jump=0; }
-  velY -= 22*dt;
-  player.position.y += velY*dt;
-  if (player.position.y <= 1) { player.position.y=1; velY=0; onG=1; }
-  if (Math.hypot(mx,mz)>0.02) {
-    let face=Math.atan2(mx,mz), cur=player.rotation.y, d=face-cur;
-    while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2;
-    player.rotation.y = cur + d*Math.min(1,14*dt);
+
+  pollGamepad();
+
+  // apply touch look
+  if (isMobile) {
+    yaw -= lookDX * 2.8 * dt;
+    pitch -= lookDY * 2.2 * dt;
+    pitch = Math.max(-1.55, Math.min(1.55, pitch));
   }
-  const dist=5.5;
-  const tx=player.position.x+Math.sin(yaw)*dist*Math.cos(pitch);
-  const ty=player.position.y+1.4+Math.sin(pitch)*dist;
-  const tz=player.position.z+Math.cos(yaw)*dist*Math.cos(pitch);
-  camera.position.lerp(new THREE.Vector3(tx,ty,tz), 1-Math.pow(0.00005,dt));
-  camera.lookAt(player.position.x, player.position.y+1.15, player.position.z);
+
+  // keyboard fallback
+  let kx = (keys.KeyD||0) - (keys.KeyA||0);
+  let kz = (keys.KeyW||0) - (keys.KeyS||0);
+  if (Math.abs(kx) + Math.abs(kz) > 0) {
+    moveX = kx; moveZ = kz;
+  }
+
+  // normalize move
+  let mx = moveX, mz = moveZ;
+  const len = Math.hypot(mx, mz) || 1;
+  mx /= len; mz /= len;
+
+  const sy = Math.sin(yaw), cy = Math.cos(yaw);
+  const worldX = mx * cy + mz * sy;
+  const worldZ = -mx * sy + mz * cy;
+
+  const speed = 6.5;
+  player.position.x += worldX * speed * dt;
+  player.position.z += worldZ * speed * dt;
+
+  // jump + gravity
+  if (keys.jump && onG) { velY = 8.5; onG = 0; keys.jump = 0; }
+  velY -= 22 * dt;
+  player.position.y += velY * dt;
+  if (player.position.y <= 0.6) {
+    player.position.y = 0.6;
+    velY = 0;
+    onG = 1;
+  }
+
+  // face movement direction + simple walk animation
+  const moving = Math.hypot(worldX, worldZ) > 0.08;
+  if (moving) {
+    let face = Math.atan2(worldX, worldZ);
+    let cur = player.rotation.y;
+    let d = face - cur;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    player.rotation.y = cur + d * Math.min(1, 12 * dt);
+
+    // walk bob + slight lean
+    walkCycle += dt * 10;
+    charRoot.position.y = Math.sin(walkCycle) * 0.04;
+    charRoot.rotation.z = Math.sin(walkCycle) * 0.06;
+    charRoot.rotation.x = Math.sin(walkCycle * 0.5) * 0.03;
+  } else {
+    // settle back
+    charRoot.position.y += (0 - charRoot.position.y) * 8 * dt;
+    charRoot.rotation.z += (0 - charRoot.rotation.z) * 8 * dt;
+    charRoot.rotation.x += (0 - charRoot.rotation.x) * 8 * dt;
+  }
+
+  // smooth third-person camera that follows the player (full 360)
+  const dist = 4.8;
+  const camHeight = 1.35;
+  const tx = player.position.x + Math.sin(yaw) * dist * Math.cos(pitch);
+  const ty = player.position.y + camHeight + Math.sin(pitch) * dist;
+  const tz = player.position.z + Math.cos(yaw) * dist * Math.cos(pitch);
+
+  camera.position.lerp(new THREE.Vector3(tx, ty, tz), 1 - Math.pow(0.00002, dt));
+  camera.lookAt(
+    player.position.x,
+    player.position.y + 0.95,
+    player.position.z
+  );
+
   renderer.render(scene, camera);
 }
 
-window.addEventListener('error', e => showErr(String(e.message||e)));
-window.addEventListener('unhandledrejection', e => showErr(String(e.reason||e)));
+window.addEventListener('error', e => showErr(String(e.message || e)));
+window.addEventListener('unhandledrejection', e => showErr(String(e.reason || e)));
 
-// Boot flow: website → client with ?game=
+// Boot
 $('#bootMsg').textContent = gameId ? ('Joining ' + (PLACES[gameId]?.name || gameId) + '…') : 'Loading client…';
 setTimeout(() => {
-  if (autoPlay) {
-    start(gameId || 'playground');
-  } else {
+  if (autoPlay) start(gameId || 'playground');
+  else {
     $('#boot').classList.add('hid');
     $('#hub').classList.add('on');
   }
-}, 400);
+}, 350);
 </script>
 </body>
 </html>
