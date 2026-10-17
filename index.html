@@ -37,13 +37,22 @@ a.web{color:#3dd6b0;font-size:.85rem}
 /* Mobile controls */
 #mobileControls{display:none;position:fixed;inset:0;pointer-events:none;z-index:15}
 #mobileControls.on{display:block}
-.joy-zone{position:absolute;bottom:30px;width:130px;height:130px;pointer-events:auto;touch-action:none}
+.joy-zone{position:absolute;bottom:30px;width:140px;height:140px;pointer-events:auto;touch-action:none}
 #joyLeft{left:25px}
-#joyRight{right:25px}
 .joy-base{width:100%;height:100%;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);position:relative}
-.joy-stick{width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.45);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;transition:background .1s}
-#jumpBtn{position:absolute;bottom:40px;right:170px;width:70px;height:70px;border-radius:50%;background:rgba(79,124,255,.55);border:2px solid rgba(255,255,255,.3);color:#fff;font-weight:700;font-size:14px;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center}
-@media(max-width:900px){#jumpBtn{right:160px}}
+.joy-stick{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.5);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+#jumpBtn{
+  position:absolute;bottom:40px;right:30px;
+  width:90px;height:90px;border-radius:50%;
+  background:linear-gradient(145deg,#5b8cff,#3a6df0);
+  border:3px solid rgba(255,255,255,.4);
+  color:#fff;font-weight:800;font-size:16px;
+  pointer-events:auto;touch-action:none;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 18px rgba(59,109,240,.5);
+  user-select:none;
+}
+#jumpBtn:active{transform:scale(0.92);background:linear-gradient(145deg,#4a7aee,#2f5cd0)}
 </style>
 </head>
 <body>
@@ -90,7 +99,6 @@ a.web{color:#3dd6b0;font-size:.85rem}
   <button class="btn sec" type="button" id="leave">Leave</button>
   <div id="mobileControls">
     <div class="joy-zone" id="joyLeft"><div class="joy-base"><div class="joy-stick" id="stickL"></div></div></div>
-    <div class="joy-zone" id="joyRight"><div class="joy-base"><div class="joy-stick" id="stickR"></div></div></div>
     <div id="jumpBtn">JUMP</div>
   </div>
 </div>
@@ -128,9 +136,8 @@ const PLACES = {
 
 // ========== STATE ==========
 let running = 0, yaw = 0, pitch = 0.25, keys = {}, velY = 0, onG = 1, placeName = 'Playground';
-let moveX = 0, moveZ = 0;          // analog move
-let lookDX = 0, lookDY = 0;        // analog look
-let walkCycle = 0;                 // for simple animation
+let moveX = 0, moveZ = 0;
+let walkCycle = 0;
 let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || ('ontouchstart' in window);
 
 const scene = new THREE.Scene();
@@ -144,9 +151,8 @@ const player = new THREE.Group();
 player.position.set(0, 0.6, 0);
 scene.add(player);
 
-// Smaller character root
 const charRoot = new THREE.Group();
-charRoot.scale.set(0.55, 0.55, 0.55); // smaller!
+charRoot.scale.set(0.55, 0.55, 0.55);
 player.add(charRoot);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -181,7 +187,6 @@ function buildMap(id) {
   });
 }
 
-// Load smaller avatar
 new GLTFLoader().load(
   'https://cdn.jsdelivr.net/gh/GuestVRGT/huh@main/male.glb',
   (g) => {
@@ -191,7 +196,6 @@ new GLTFLoader().load(
   },
   undefined,
   () => {
-    // fallback simple body (smaller)
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.28, 0.7, 4, 8),
       new THREE.MeshStandardMaterial({ color: 0x5b8cff })
@@ -216,15 +220,14 @@ document.addEventListener('mousemove', e => {
   if (!running || document.pointerLockElement !== $('#c') || isMobile) return;
   yaw -= e.movementX * 0.0028;
   pitch -= e.movementY * 0.0025;
-  // full 360 – no hard clamp, just soft limit so you don’t go inverted forever
   pitch = Math.max(-1.55, Math.min(1.55, pitch));
 });
 
-// ========== INPUT: TOUCH JOYSTICKS (mobile) ==========
+// ========== INPUT: LEFT JOYSTICK (FIXED DIRECTION) ==========
 function setupJoystick(zoneId, stickId, onMove) {
   const zone = $(zoneId), stick = $(stickId);
   let active = false, ox = 0, oy = 0, id = null;
-  const maxR = 48;
+  const maxR = 50;
 
   function pos(e, touch) {
     const r = zone.getBoundingClientRect();
@@ -251,9 +254,10 @@ function setupJoystick(zoneId, stickId, onMove) {
     const len = Math.hypot(dx, dy);
     if (len > maxR) { dx = dx/len*maxR; dy = dy/len*maxR; }
     stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    onMove(dx / maxR, dy / maxR);
+    // FIXED: forward is up on the stick (negative Y)
+    onMove(dx / maxR, -dy / maxR);
   }
-  function end(e) {
+  function end() {
     if (!active) return;
     active = false; id = null;
     stick.style.transform = 'translate(-50%,-50%)';
@@ -263,38 +267,38 @@ function setupJoystick(zoneId, stickId, onMove) {
   zone.addEventListener('touchmove', move, {passive:false});
   zone.addEventListener('touchend', end);
   zone.addEventListener('touchcancel', end);
-  // also mouse for testing
   zone.addEventListener('mousedown', start);
   window.addEventListener('mousemove', e => { if (active && id==='mouse') move(e); });
   window.addEventListener('mouseup', end);
 }
 
-setupJoystick('#joyLeft', '#stickL', (x, y) => { moveX = x; moveZ = -y; });
-setupJoystick('#joyRight', '#stickR', (x, y) => { lookDX = x; lookDY = y; });
+setupJoystick('#joyLeft', '#stickL', (x, y) => {
+  moveX = x;
+  moveZ = y;   // now correct direction
+});
 
-$('#jumpBtn').addEventListener('touchstart', e => { e.preventDefault(); keys.jump = 1; }, {passive:false});
-$('#jumpBtn').addEventListener('mousedown', () => keys.jump = 1);
+// Big JUMP button
+function doJump() { keys.jump = 1; }
+$('#jumpBtn').addEventListener('touchstart', e => { e.preventDefault(); doJump(); }, {passive:false});
+$('#jumpBtn').addEventListener('mousedown', doJump);
 
-// ========== INPUT: GAMEPAD / CONSOLE ==========
+// ========== INPUT: GAMEPAD ==========
 function pollGamepad() {
   const pads = navigator.getGamepads?.() || [];
   const gp = pads[0] || pads[1];
   if (!gp) return;
 
-  // left stick → move
   const lx = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
   const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
   moveX = lx;
-  moveZ = -ly;
+  moveZ = -ly;   // stick up = forward
 
-  // right stick → look (full 360)
   const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
   const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
   yaw -= rx * 0.045;
   pitch -= ry * 0.035;
   pitch = Math.max(-1.55, Math.min(1.55, pitch));
 
-  // A / Cross → jump
   if (gp.buttons[0]?.pressed) keys.jump = 1;
 }
 
@@ -309,8 +313,8 @@ function start(id) {
   if (isMobile) $('#mobileControls').classList.add('on');
   player.position.set(0, 0.6, 0);
   velY = 0; yaw = 0; pitch = 0.25;
-  moveX = moveZ = lookDX = lookDY = 0;
-  $('#hud').textContent = placeName + (isMobile ? ' · Joysticks + Jump' : ' · WASD · Mouse · Gamepad');
+  moveX = moveZ = 0;
+  $('#hud').textContent = placeName + (isMobile ? ' · Move + JUMP' : ' · WASD · Mouse · Gamepad');
   onResize();
   last = performance.now();
   loop();
@@ -345,21 +349,14 @@ function loop() {
 
   pollGamepad();
 
-  // apply touch look
-  if (isMobile) {
-    yaw -= lookDX * 2.8 * dt;
-    pitch -= lookDY * 2.2 * dt;
-    pitch = Math.max(-1.55, Math.min(1.55, pitch));
-  }
-
-  // keyboard fallback
+  // keyboard
   let kx = (keys.KeyD||0) - (keys.KeyA||0);
   let kz = (keys.KeyW||0) - (keys.KeyS||0);
   if (Math.abs(kx) + Math.abs(kz) > 0) {
-    moveX = kx; moveZ = kz;
+    moveX = kx;
+    moveZ = kz;
   }
 
-  // normalize move
   let mx = moveX, mz = moveZ;
   const len = Math.hypot(mx, mz) || 1;
   mx /= len; mz /= len;
@@ -372,7 +369,7 @@ function loop() {
   player.position.x += worldX * speed * dt;
   player.position.z += worldZ * speed * dt;
 
-  // jump + gravity
+  // jump
   if (keys.jump && onG) { velY = 8.5; onG = 0; keys.jump = 0; }
   velY -= 22 * dt;
   player.position.y += velY * dt;
@@ -382,7 +379,7 @@ function loop() {
     onG = 1;
   }
 
-  // face movement direction + simple walk animation
+  // face + walk animation
   const moving = Math.hypot(worldX, worldZ) > 0.08;
   if (moving) {
     let face = Math.atan2(worldX, worldZ);
@@ -392,19 +389,17 @@ function loop() {
     while (d < -Math.PI) d += Math.PI * 2;
     player.rotation.y = cur + d * Math.min(1, 12 * dt);
 
-    // walk bob + slight lean
     walkCycle += dt * 10;
     charRoot.position.y = Math.sin(walkCycle) * 0.04;
     charRoot.rotation.z = Math.sin(walkCycle) * 0.06;
     charRoot.rotation.x = Math.sin(walkCycle * 0.5) * 0.03;
   } else {
-    // settle back
     charRoot.position.y += (0 - charRoot.position.y) * 8 * dt;
     charRoot.rotation.z += (0 - charRoot.rotation.z) * 8 * dt;
     charRoot.rotation.x += (0 - charRoot.rotation.x) * 8 * dt;
   }
 
-  // smooth third-person camera that follows the player (full 360)
+  // camera follow
   const dist = 4.8;
   const camHeight = 1.35;
   const tx = player.position.x + Math.sin(yaw) * dist * Math.cos(pitch);
@@ -412,11 +407,7 @@ function loop() {
   const tz = player.position.z + Math.cos(yaw) * dist * Math.cos(pitch);
 
   camera.position.lerp(new THREE.Vector3(tx, ty, tz), 1 - Math.pow(0.00002, dt));
-  camera.lookAt(
-    player.position.x,
-    player.position.y + 0.95,
-    player.position.z
-  );
+  camera.lookAt(player.position.x, player.position.y + 0.95, player.position.z);
 
   renderer.render(scene, camera);
 }
@@ -424,7 +415,6 @@ function loop() {
 window.addEventListener('error', e => showErr(String(e.message || e)));
 window.addEventListener('unhandledrejection', e => showErr(String(e.reason || e)));
 
-// Boot
 $('#bootMsg').textContent = gameId ? ('Joining ' + (PLACES[gameId]?.name || gameId) + '…') : 'Loading client…';
 setTimeout(() => {
   if (autoPlay) start(gameId || 'playground');
