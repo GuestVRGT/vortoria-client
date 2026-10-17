@@ -76,7 +76,7 @@ a.web{color:#3dd6b0;font-size:.85rem}
   <section id="home">
     <div class="card">
       <h2>Client ready</h2>
-      <p style="color:#8b9bb8;margin:8px 0 12px">Mobile, console & desktop supported. Full 360° camera.</p>
+      <p style="color:#8b9bb8;margin:8px 0 12px">Drag anywhere to look · Left stick to move · JUMP button</p>
       <button class="btn" type="button" id="go">Play Playground</button>
     </div>
   </section>
@@ -139,6 +139,10 @@ let running = 0, yaw = 0, pitch = 0.25, keys = {}, velY = 0, onG = 1, placeName 
 let moveX = 0, moveZ = 0;
 let walkCycle = 0;
 let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
+// Touch look state
+let lookTouchId = null;
+let lastLookX = 0, lastLookY = 0;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87b8d8);
@@ -212,7 +216,7 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.code] = 0; });
 
-// ========== INPUT: MOUSE (full 360) ==========
+// ========== INPUT: MOUSE LOOK (desktop) ==========
 $('#c').addEventListener('click', () => {
   if (!isMobile) $('#c').requestPointerLock?.();
 });
@@ -223,7 +227,51 @@ document.addEventListener('mousemove', e => {
   pitch = Math.max(-1.55, Math.min(1.55, pitch));
 });
 
-// ========== INPUT: LEFT JOYSTICK (FIXED DIRECTION) ==========
+// ========== INPUT: TOUCH DRAG TO LOOK (anywhere on screen) ==========
+const canvas = $('#c');
+
+canvas.addEventListener('touchstart', e => {
+  if (!running) return;
+  // Ignore touches that start on the joystick or jump button
+  for (const t of e.changedTouches) {
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    if (el && (el.closest('#joyLeft') || el.closest('#jumpBtn') || el.closest('#leave'))) continue;
+    if (lookTouchId === null) {
+      lookTouchId = t.identifier;
+      lastLookX = t.clientX;
+      lastLookY = t.clientY;
+    }
+  }
+}, {passive: true});
+
+canvas.addEventListener('touchmove', e => {
+  if (!running || lookTouchId === null) return;
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === lookTouchId) {
+      const dx = t.clientX - lastLookX;
+      const dy = t.clientY - lastLookY;
+      lastLookX = t.clientX;
+      lastLookY = t.clientY;
+      yaw -= dx * 0.0045;
+      pitch -= dy * 0.0038;
+      pitch = Math.max(-1.55, Math.min(1.55, pitch));
+    }
+  }
+}, {passive: false});
+
+canvas.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === lookTouchId) lookTouchId = null;
+  }
+});
+canvas.addEventListener('touchcancel', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === lookTouchId) lookTouchId = null;
+  }
+});
+
+// ========== INPUT: LEFT JOYSTICK (correct direction) ==========
 function setupJoystick(zoneId, stickId, onMove) {
   const zone = $(zoneId), stick = $(stickId);
   let active = false, ox = 0, oy = 0, id = null;
@@ -254,7 +302,7 @@ function setupJoystick(zoneId, stickId, onMove) {
     const len = Math.hypot(dx, dy);
     if (len > maxR) { dx = dx/len*maxR; dy = dy/len*maxR; }
     stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    // FIXED: forward is up on the stick (negative Y)
+    // Up on stick = forward
     onMove(dx / maxR, -dy / maxR);
   }
   function end() {
@@ -274,7 +322,7 @@ function setupJoystick(zoneId, stickId, onMove) {
 
 setupJoystick('#joyLeft', '#stickL', (x, y) => {
   moveX = x;
-  moveZ = y;   // now correct direction
+  moveZ = y;
 });
 
 // Big JUMP button
@@ -291,7 +339,7 @@ function pollGamepad() {
   const lx = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
   const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
   moveX = lx;
-  moveZ = -ly;   // stick up = forward
+  moveZ = -ly;
 
   const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
   const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
@@ -314,7 +362,8 @@ function start(id) {
   player.position.set(0, 0.6, 0);
   velY = 0; yaw = 0; pitch = 0.25;
   moveX = moveZ = 0;
-  $('#hud').textContent = placeName + (isMobile ? ' · Move + JUMP' : ' · WASD · Mouse · Gamepad');
+  lookTouchId = null;
+  $('#hud').textContent = placeName + (isMobile ? ' · Drag to look · Stick + JUMP' : ' · WASD · Mouse · Gamepad');
   onResize();
   last = performance.now();
   loop();
