@@ -87,7 +87,7 @@ a.web{color:#3dd6b0;font-size:.85rem}
   <section id="home">
     <div class="card">
       <h2>Client ready</h2>
-      <p style="color:#8b9bb8;margin:8px 0 12px">Drag to look (instant) · Stick to move · JUMP · Zoom with + / -</p>
+      <p style="color:#8b9bb8;margin:8px 0 12px">Move where you look · Drag to look · JUMP · Zoom</p>
       <button class="btn" type="button" id="go">Play Playground</button>
     </div>
   </section>
@@ -150,8 +150,8 @@ const PLACES = {
 };
 
 // ========== STATE ==========
-let running = 0, yaw = 0, pitch = 0.25, keys = {}, velY = 0, onG = 1, placeName = 'Playground';
-let moveX = 0, moveZ = 0;
+let running = 0, yaw = 0, pitch = 0.2, keys = {}, velY = 0, onG = 1, placeName = 'Playground';
+let moveX = 0, moveZ = 0; // stick input: X = strafe, Z = forward/back
 let walkCycle = 0;
 let camDist = 5.5;
 const CAM_DIST_MIN = 2.0;
@@ -246,11 +246,11 @@ $('#c').addEventListener('click', () => {
 document.addEventListener('mousemove', e => {
   if (!running || document.pointerLockElement !== $('#c') || isMobile) return;
   yaw -= e.movementX * 0.0028;
-  pitch += e.movementY * 0.0025;   // inverted so mouse up = look up
-  pitch = Math.max(-1.55, Math.min(1.55, pitch));
+  pitch += e.movementY * 0.0025;
+  pitch = Math.max(-1.4, Math.min(1.4, pitch));
 });
 
-// ========== MOUSE WHEEL ZOOM ==========
+// ========== ZOOM ==========
 window.addEventListener('wheel', e => {
   if (!running) return;
   e.preventDefault();
@@ -258,13 +258,12 @@ window.addEventListener('wheel', e => {
   camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDist));
 }, { passive: false });
 
-// Zoom buttons
 $('#zoomIn').addEventListener('click', () => { camDist = Math.max(CAM_DIST_MIN, camDist - 0.8); });
 $('#zoomOut').addEventListener('click', () => { camDist = Math.min(CAM_DIST_MAX, camDist + 0.8); });
 $('#zoomIn').addEventListener('touchstart', e => { e.preventDefault(); camDist = Math.max(CAM_DIST_MIN, camDist - 0.8); }, {passive:false});
 $('#zoomOut').addEventListener('touchstart', e => { e.preventDefault(); camDist = Math.min(CAM_DIST_MAX, camDist + 0.8); }, {passive:false});
 
-// ========== TOUCH DRAG LOOK (instant + correct direction) ==========
+// ========== TOUCH DRAG LOOK ==========
 const canvas = $('#c');
 
 canvas.addEventListener('touchstart', e => {
@@ -290,13 +289,9 @@ canvas.addEventListener('touchmove', e => {
       lastLookX = t.clientX;
       lastLookY = t.clientY;
 
-      // Horizontal: finger right = look right
       yaw -= dx * 0.005;
-
-      // Vertical: finger UP = look UP (inverted from before)
-      pitch += dy * 0.0042;
-
-      pitch = Math.max(-1.55, Math.min(1.55, pitch));
+      pitch += dy * 0.0042; // finger up = look up
+      pitch = Math.max(-1.4, Math.min(1.4, pitch));
     }
   }
 }, {passive: false});
@@ -351,6 +346,9 @@ function setupJoystick(zoneId, stickId) {
       dy = (dy / len) * maxR;
     }
     stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+    // Stick right = +X (strafe right)
+    // Stick up   = -Y on screen → +forward
     moveX = dx / maxR;
     moveZ = -dy / maxR;
   }
@@ -395,8 +393,8 @@ function pollGamepad() {
   const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
   const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
   yaw -= rx * 0.045;
-  pitch += ry * 0.035; // consistent with inverted look
-  pitch = Math.max(-1.55, Math.min(1.55, pitch));
+  pitch += ry * 0.035;
+  pitch = Math.max(-1.4, Math.min(1.4, pitch));
 
   if (gp.buttons[0]?.pressed) keys.jump = 1;
 }
@@ -411,11 +409,11 @@ function start(id) {
   $('#boot').classList.add('hid');
   if (isMobile) $('#mobileControls').classList.add('on');
   player.position.set(0, STAND_Y, 0);
-  velY = 0; yaw = 0; pitch = 0.25;
+  velY = 0; yaw = 0; pitch = 0.2;
   moveX = 0; moveZ = 0;
   camDist = 5.5;
   lookTouchId = null;
-  $('#hud').textContent = placeName + (isMobile ? ' · Drag look · Stick · JUMP · +/- zoom' : ' · WASD · Mouse · Scroll zoom');
+  $('#hud').textContent = placeName + (isMobile ? ' · Move where you look' : ' · WASD · Mouse');
   onResize();
   last = performance.now();
   loop();
@@ -450,6 +448,7 @@ function loop() {
 
   pollGamepad();
 
+  // Keyboard overrides when held
   let kx = (keys.KeyD || 0) - (keys.KeyA || 0);
   let kz = (keys.KeyW || 0) - (keys.KeyS || 0);
   if (Math.abs(kx) + Math.abs(kz) > 0) {
@@ -457,20 +456,32 @@ function loop() {
     moveZ = kz;
   }
 
-  let mx = moveX;
-  let mz = moveZ;
-  const len = Math.hypot(mx, mz);
-  if (len > 1) { mx /= len; mz /= len; }
+  // Normalize input
+  let inputX = moveX;
+  let inputZ = moveZ;
+  const len = Math.hypot(inputX, inputZ);
+  if (len > 1) {
+    inputX /= len;
+    inputZ /= len;
+  }
 
-  const sy = Math.sin(yaw);
-  const cy = Math.cos(yaw);
-  const worldX = mx * cy + mz * sy;
-  const worldZ = mx * sy - mz * cy;
+  // ===== CAMERA-RELATIVE MOVEMENT =====
+  // Forward direction = the direction the camera is looking on the XZ plane
+  // yaw = 0 means looking toward -Z
+  const forwardX = -Math.sin(yaw);
+  const forwardZ = -Math.cos(yaw);
+  const rightX   =  Math.cos(yaw);
+  const rightZ   = -Math.sin(yaw);
 
-  const speed = 6.5;
+  // Combine: stick forward moves along camera forward, stick right strafes
+  const worldX = forwardX * inputZ + rightX * inputX;
+  const worldZ = forwardZ * inputZ + rightZ * inputX;
+
+  const speed = 6.8;
   player.position.x += worldX * speed * dt;
   player.position.z += worldZ * speed * dt;
 
+  // Jump + gravity
   if (keys.jump && onG) { velY = 8.5; onG = 0; keys.jump = 0; }
   velY -= 22 * dt;
   player.position.y += velY * dt;
@@ -480,30 +491,31 @@ function loop() {
     onG = 1;
   }
 
+  // Rotate character to face movement direction
   const moving = Math.hypot(worldX, worldZ) > 0.05;
   if (moving) {
-    let face = Math.atan2(worldX, worldZ);
+    const face = Math.atan2(worldX, worldZ);
     let cur = player.rotation.y;
     let d = face - cur;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    player.rotation.y = cur + d * Math.min(1, 12 * dt);
+    player.rotation.y = cur + d * Math.min(1, 14 * dt);
 
-    walkCycle += dt * 10;
+    walkCycle += dt * 11;
     charRoot.position.y = Math.sin(walkCycle) * 0.03;
     charRoot.rotation.z = Math.sin(walkCycle) * 0.05;
   } else {
-    charRoot.position.y += (0 - charRoot.position.y) * 8 * dt;
-    charRoot.rotation.z += (0 - charRoot.rotation.z) * 8 * dt;
+    charRoot.position.y += (0 - charRoot.position.y) * 10 * dt;
+    charRoot.rotation.z += (0 - charRoot.rotation.z) * 10 * dt;
   }
 
-  // INSTANT camera (no lerp / no delay)
+  // Instant camera follow
   const tx = player.position.x + Math.sin(yaw) * camDist * Math.cos(pitch);
   const ty = player.position.y + 1.5 + Math.sin(pitch) * camDist;
   const tz = player.position.z + Math.cos(yaw) * camDist * Math.cos(pitch);
 
   camera.position.set(tx, ty, tz);
-  camera.lookAt(player.position.x, player.position.y + 1.1, player.position.z);
+  camera.lookAt(player.position.x, player.position.y + 1.15, player.position.z);
 
   renderer.render(scene, camera);
 }
